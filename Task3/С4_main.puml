@@ -6,8 +6,6 @@ package "Веб-портал" {
         - password: str
         --
         +auth()
-        --
-        Форма входа для оператора и агронома.
     }
 
     class MetricViewForm {
@@ -15,8 +13,6 @@ package "Веб-портал" {
         +show_metrics()
         +show_alerts()
         +show_trends()
-        --
-        Форма просмотра метрик, тревог и трендов.
     }
 
     class MetricForm {
@@ -25,22 +21,16 @@ package "Веб-портал" {
         - entity_id: str
         --
         +add()
-        --
-        Форма добавления пользовательских метрик.
     }
 
     class ControlForm {
         +start(feeder_id, amount_kg)
         +stop(feeder_id)
-        --
-        Панель ручного управления кормушками.
     }
 
     class WebSocketClient {
         --
         +on_alert()
-        --
-        Получает push-оповещения от NotificationManager.
     }
 }
 
@@ -208,7 +198,19 @@ package "Сервис сбора данных" {
     }
 }
 
-class TimescaleDB <<external>>
+class TimescaleDB <<external>> {
+    - sensor_data (гипертаблица)
+    - user_metrics (обычная таблица)
+    - alerts (обычная таблица)
+    - feeder_logs (обычная таблица)
+    - sync_status (поле synced)
+}
+
+class SQLiteDB <<external>> {
+    - users (таблица)
+    - roles (таблица)
+}
+
 class KafkaBroker <<external>>
 class NeuralNetwork <<external>>
 
@@ -247,5 +249,6 @@ DataRepository --> TimescaleDB
 AlertRepository --> TimescaleDB
 FeederRepository --> TimescaleDB
 DataRepositorySync --> TimescaleDB
+UserRepository --> SQLiteDB
 
 @enduml
