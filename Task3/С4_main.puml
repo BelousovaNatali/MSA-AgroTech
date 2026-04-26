@@ -1,0 +1,251 @@
+@startuml
+
+package "Веб-портал" {
+    class LoginForm {
+        - username: str
+        - password: str
+        --
+        +auth()
+        --
+        Форма входа для оператора и агронома.
+    }
+
+    class MetricViewForm {
+        --
+        +show_metrics()
+        +show_alerts()
+        +show_trends()
+        --
+        Форма просмотра метрик, тревог и трендов.
+    }
+
+    class MetricForm {
+        - metric_name: str
+        - metric_value: any
+        - entity_id: str
+        --
+        +add()
+        --
+        Форма добавления пользовательских метрик.
+    }
+
+    class ControlForm {
+        +start(feeder_id, amount_kg)
+        +stop(feeder_id)
+        --
+        Панель ручного управления кормушками.
+    }
+
+    class WebSocketClient {
+        --
+        +on_alert()
+        --
+        Получает push-оповещения от NotificationManager.
+    }
+}
+
+package "Сервис видеоаналитики" {
+    class RTSPReceiver {
+        - camera_url: str
+        - stream: cv2.VideoCapture
+        - is_connected: bool
+        --
+        +connect()
+        +read_frame()
+        +disconnect()
+    }
+
+    class GRPCClient {
+        - neural_url: str
+        - channel: grpc.Channel
+        --
+        +detect(frame)
+    }
+
+    class EventPublisher {
+        --
+        +publish_alert(alert_data)
+    }
+
+    class AlertRepository {
+        - db_connection: DatabaseConnection
+        - table_name: str
+        --
+        +save(alert_data)
+    }
+}
+
+package "Сервис управления кормушками" {
+    class FeederController {
+        - feeder_service: FeederService
+        --
+        +start_dispensing(feeder_id, amount_kg)
+        +stop_dispensing(feeder_id)
+        +get_feeder_status(feeder_id)
+    }
+
+    class FeederService {
+        - modbus_client: ModbusClient
+        - feeder_repository: FeederRepository
+        --
+        +start(feeder_id, amount_kg)
+        +stop(feeder_id)
+        +get_status(feeder_id)
+    }
+
+    class ModbusClient {
+        - host: str
+        - port: int
+        - unit_id: int
+        --
+        +open_valve(address)
+        +close_valve(address)
+    }
+
+    class FeederRepository {
+        - db_connection: DatabaseConnection
+        - table_name: str
+        --
+        +log_dispensing_event(feeder_id, amount_kg)
+    }
+}
+
+package "Сервис аутентификации" {
+    class AuthController {
+        +login(username, password)
+    }
+
+    class AuthService {
+        +authenticate(username, password)
+    }
+
+    class UserRepository {
+        - db_connection: sqlite3.Connection
+        --
+        +find_by_username(username)
+    }
+}
+
+package "Сервис синхронизации" {
+    class SyncScheduler {
+        - schedule: str
+        --
+        +run_cron(schedule)
+    }
+
+    class DataRepositorySync {
+        - db_connection: DatabaseConnection
+        --
+        +read_unsynced_sensors()
+        +read_unsynced_metrics()
+        +read_unsynced_alerts()
+        +read_unsynced_feeder_logs()
+        +mark_synced(table_name, ids)
+    }
+
+    class KafkaProducer {
+        - topic: str
+        - producer: aiokafka.AIOKafkaProducer
+        --
+        +send(messages)
+    }
+}
+
+package "Сервис сбора данных" {
+    class SensorController {
+        - sensor_service: SensorService
+        --
+        +push(sensor_id, value)
+    }
+
+    class MetricController {
+        - metric_service: MetricService
+        --
+        +add(metric_name, metric_value, entity_id)
+    }
+
+    class ManualController {
+        - manual_service: ManualService
+        - notification_manager: NotificationManager
+        --
+        +start_feed(feeder_id, amount_kg)
+        +stop_feed(feeder_id)
+    }
+
+    class SensorService {
+        - data_repository: DataRepository
+        --
+        +process(sensor_id, value)
+    }
+
+    class MetricService {
+        - data_repository: DataRepository
+        --
+        +process(metric_name, metric_value, entity_id)
+    }
+
+    class ManualService {
+        - feeder_service_endpoint: str
+        --
+        +process(feeder_id, amount_kg)
+    }
+
+    class NotificationManager {
+        - web_portal_url: str
+        --
+        +push(user_id, message)
+    }
+
+    class DataRepository {
+        - db_connection: DatabaseConnection
+        - table_sensors: str
+        - table_metrics: str
+        - table_alerts: str
+        --
+        +save_sensor_reading(data)
+        +save_metric(data)
+        +save_alert(data)
+    }
+}
+
+class TimescaleDB <<external>>
+class KafkaBroker <<external>>
+class NeuralNetwork <<external>>
+
+LoginForm --> AuthController
+MetricViewForm --> MetricController
+WebSocketClient --> NotificationManager
+ControlForm --> ManualController
+MetricForm --> MetricController
+
+RTSPReceiver --> GRPCClient
+GRPCClient --> NeuralNetwork
+GRPCClient --> EventPublisher
+EventPublisher --> AlertRepository
+EventPublisher --> SensorController
+
+FeederController --> FeederService
+FeederService --> ModbusClient
+FeederService --> FeederRepository
+
+SensorController --> SensorService
+MetricController --> MetricService
+ManualController --> ManualService
+ManualController --> NotificationManager
+SensorService --> DataRepository
+MetricService --> DataRepository
+ManualService --> FeederController
+
+AuthController --> AuthService
+AuthService --> UserRepository
+
+SyncScheduler --> DataRepositorySync
+DataRepositorySync --> KafkaProducer
+KafkaProducer --> KafkaBroker
+
+DataRepository --> TimescaleDB
+AlertRepository --> TimescaleDB
+FeederRepository --> TimescaleDB
+DataRepositorySync --> TimescaleDB
+
+@enduml
