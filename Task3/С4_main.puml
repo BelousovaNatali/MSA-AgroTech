@@ -203,7 +203,6 @@ class TimescaleDB <<external>> {
     - user_metrics (обычная таблица)
     - alerts (обычная таблица)
     - feeder_logs (обычная таблица)
-    - sync_status (поле synced)
 }
 
 class SQLiteDB <<external>> {
