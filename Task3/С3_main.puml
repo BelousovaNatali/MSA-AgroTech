@@ -1,0 +1,120 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Компонентная диаграмма C3 — Основное решение
+
+Person(operator, "Дежурный оператор")
+Person(agronom, "Агроном / Ветеринар")
+
+System_Boundary(farm, "Свиноводческая ферма") {
+
+    Component(web_portal, "Веб-портал", "React + Nginx") {
+        Component(auth_form, "Форма аутентификации", "Логин/пароль, JWT")
+        Component(metric_form, "Форма добавления метрик", "Ввод пользовательских метрик")
+        Component(control_form, "Форма управления", "Ручное управление кормушками")
+        Component(websocket_client, "WebSocket клиент", "Получение push-оповещений")
+    }
+
+    Component(data_collector, "Сервис сбора данных", "Python + FastAPI") {
+        Component(sensor_controller, "Контроллер датчиков", "Modbus / MQTT")
+        Component(metric_controller, "Контроллер метрик", "HTTP/REST")
+        Component(manual_controller, "Контроллер управления", "HTTP/REST")
+        Component(notification_manager, "Менеджер оповещений", "WebSocket отправка")
+        Component(sensor_repository, "Репозиторий датчиков", "Сохранение показаний с synced=false")
+        Component(metric_repository, "Репозиторий метрик", "Сохранение метрик с synced=false")
+        Component(alert_repository, "Репозиторий тревог", "Сохранение тревог с synced=false")
+    }
+
+    Component(video_analytics, "Сервис видеоаналитики", "Python + FastAPI") {
+        Component(rtsp_receiver, "RTSP приёмник", "Получение видеопотока")
+        Component(grpc_client, "gRPC клиент", "Вызов внешней нейросети")
+        Component(event_publisher, "Публикация тревог", "HTTP/gRPC вызов data_collector")
+        Component(alert_repository_video, "Репозиторий тревог", "Сохранение тревог с synced=false")
+    }
+
+    Component(feeder_controller, "Сервис управления кормушками", "Python + FastAPI + pymodbus") {
+        Component(cmd_controller, "Контроллер команд", "HTTP")
+        Component(modbus_client, "Modbus клиент", "Отправка команд на контроллеры")
+        Component(feeder_repository, "Репозиторий логов", "Сохранение досыпок с synced=false и обновление статуса")
+    }
+
+    Component(sync_agent, "Сервис синхронизации", "Python + aiokafka") {
+        Component(sensor_repository_sync, "Репозиторий датчиков", "Чтение с synced=false")
+        Component(metric_repository_sync, "Репозиторий метрик", "Чтение с synced=false")
+        Component(alert_repository_sync, "Репозиторий тревог", "Чтение с synced=false")
+        Component(feeder_repository_sync, "Репозиторий логов", "Чтение с synced=false")
+        Component(kafka_producer, "Kafka продюсер", "Отправка в Kafka")
+    }
+
+    Component(local_auth, "Сервис аутентификации", "Python + PyJWT + SQLite") {
+        Component(login_handler, "Обработка логина", "Проверка пароля, выдача JWT")
+        Component(token_validator, "Проверка JWT", "Валидация токенов")
+    }
+
+    ComponentDb(local_db, "Локальная БД", "TimescaleDB") {
+        Component(sensor_table, "Гипертаблица датчиков", "Показания, поле synced")
+        Component(alert_table, "Таблица тревог", "События, поле synced")
+        Component(metric_table, "Таблица метрик", "Пользовательские метрики, поле synced")
+        Component(feeder_log_table, "Таблица логов", "Досыпки, поле synced")
+    }
+
+    ComponentDb(local_auth_db, "БД пользователей", "SQLite") {
+        Component(users_table, "Таблица пользователей", "Логины, хеши, роли")
+    }
+
+    Component(cameras, "Видеокамеры", "RTSP")
+    Component(sensors, "Датчики", "Modbus / MQTT")
+    Component(feeders, "Контроллеры кормушек", "Modbus")
+}
+
+System_Ext(partner_nn, "Нейросеть партнёра", "gRPC")
+System_Boundary(office, "Головной офис") {
+    Component(kafka, "Apache Kafka", "Kafka")
+    Component(clickhouse, "ClickHouse", "ClickHouse")
+    Component(powerbi, "Power BI", "Power BI")
+}
+
+Rel(cameras, rtsp_receiver, "RTSP")
+Rel(sensors, sensor_controller, "Modbus / MQTT")
+Rel(feeder_controller, feeders, "Modbus")
+
+Rel(rtsp_receiver, grpc_client, "Кадры")
+Rel(grpc_client, partner_nn, "gRPC")
+Rel(event_publisher, data_collector, "HTTP/gRPC")
+
+Rel(metric_controller, metric_repository, "Сохранение")
+Rel(manual_controller, cmd_controller, "HTTP")
+Rel(sensor_controller, sensor_repository, "Сохранение")
+Rel(notification_manager, websocket_client, "WebSocket")
+
+Rel(sensor_repository, sensor_table, "INSERT")
+Rel(metric_repository, metric_table, "INSERT")
+Rel(alert_repository, alert_table, "INSERT")
+Rel(alert_repository_video, alert_table, "INSERT")
+Rel(feeder_repository, feeder_log_table, "INSERT/UPDATE")
+
+Rel(sensor_repository_sync, sensor_table, "SELECT")
+Rel(metric_repository_sync, metric_table, "SELECT")
+Rel(alert_repository_sync, alert_table, "SELECT")
+Rel(feeder_repository_sync, feeder_log_table, "SELECT")
+Rel(kafka_producer, kafka, "Kafka Protocol")
+
+Rel(feeder_repository_sync, feeder_log_table, "UPDATE synced=true")
+
+Rel(login_handler, users_table, "SELECT")
+Rel(token_validator, users_table, "SELECT")
+
+Rel(web_portal, local_auth, "HTTP")
+Rel(websocket_client, notification_manager, "WebSocket")
+Rel(control_form, manual_controller, "HTTP")
+Rel(metric_form, metric_controller, "HTTP")
+Rel(auth_form, login_handler, "HTTP")
+
+Rel(kafka, clickhouse, "Kafka Connect")
+Rel(clickhouse, powerbi, "ODBC")
+
+Rel(operator, web_portal, "Использует")
+Rel(agronom, web_portal, "Использует")
+Rel(analyst, powerbi, "Работает с отчётами")
+
+@enduml

@@ -1,0 +1,123 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Компонентная диаграмма C3 — Альтернативное решение
+
+Person(operator, "Дежурный оператор")
+Person(agronom, "Агроном / Ветеринар")
+Person(analyst, "Аналитик")
+
+System_Boundary(farm, "Свиноводческая ферма") {
+
+    Component(web_portal, "Веб-портал", "React + Nginx") {
+        Component(auth_form, "Форма аутентификации", "Логин/пароль, JWT")
+        Component(metric_form, "Форма добавления метрик", "Ввод пользовательских метрик")
+        Component(control_form, "Форма управления", "Ручное управление кормушками")
+        Component(websocket_client, "WebSocket клиент", "Получение push-оповещений")
+    }
+
+    Component(data_collector, "Сервис сбора данных", "Python + FastAPI") {
+        Component(sensor_controller, "Контроллер датчиков", "Modbus / MQTT")
+        Component(metric_controller, "Контроллер метрик", "HTTP/REST")
+        Component(manual_controller, "Контроллер управления", "HTTP/REST")
+        Component(amqp_publisher, "Публикация в RabbitMQ", "AMQP")
+    }
+
+    Component(video_analytics, "Сервис видеоаналитики", "Python + FastAPI") {
+        Component(rtsp_receiver, "RTSP приёмник", "Получение видеопотока")
+        Component(grpc_client, "gRPC клиент", "Вызов внешней нейросети")
+        Component(amqp_publisher_video, "Публикация тревог", "AMQP")
+    }
+
+    Component(feeder_controller, "Сервис управления кормушками", "Python + FastAPI + pymodbus") {
+        Component(amqp_subscriber, "Подписка на RabbitMQ", "AMQP")
+        Component(modbus_client, "Modbus клиент", "Отправка команд на контроллеры")
+        Component(feeder_repository, "Репозиторий логов", "Сохранение досыпок с synced=false")
+    }
+
+    Component(alerting, "Сервис оповещений", "Python + WebSockets") {
+        Component(amqp_subscriber_alert, "Подписка на тревоги", "AMQP")
+        Component(notification_manager, "Менеджер оповещений", "WebSocket отправка")
+    }
+
+    Component(sync_agent, "Сервис синхронизации", "Python + aiokafka") {
+        Component(amqp_subscriber_sync, "Подписка на RabbitMQ", "AMQP")
+        Component(kafka_producer, "Kafka продюсер", "Отправка в Kafka")
+        Component(status_updater, "Обновление статуса", "Обновление synced в БД")
+    }
+
+    Component(message_bus, "Брокер сообщений", "RabbitMQ") {
+        Component(sensor_queue, "Очередь показаний", "AMQP")
+        Component(alert_queue, "Очередь тревог", "AMQP")
+        Component(command_queue, "Очередь команд", "AMQP")
+    }
+
+    Component(local_auth, "Сервис аутентификации", "Python + PyJWT + SQLite") {
+        Component(login_handler, "Обработка логина", "Проверка пароля, выдача JWT")
+        Component(token_validator, "Проверка JWT", "Валидация токенов")
+    }
+
+    ComponentDb(local_auth_db, "БД пользователей", "SQLite") {
+        Component(users_table, "Таблица пользователей", "Логины, хеши, роли")
+    }
+
+    ComponentDb(local_db, "Локальная БД (логи)", "TimescaleDB") {
+        Component(feeder_log_table, "Таблица логов", "Досыпки, поле synced")
+    }
+
+    Component(cameras, "Видеокамеры", "RTSP")
+    Component(sensors, "Датчики", "Modbus / MQTT")
+    Component(feeders, "Контроллеры кормушек", "Modbus")
+}
+
+System_Ext(partner_nn, "Нейросеть партнёра", "gRPC")
+System_Boundary(office, "Головной офис") {
+    Component(kafka, "Apache Kafka", "Kafka")
+    Component(clickhouse, "ClickHouse", "ClickHouse")
+    Component(powerbi, "Power BI", "Power BI")
+}
+
+Rel(cameras, rtsp_receiver, "RTSP")
+Rel(sensors, sensor_controller, "Modbus / MQTT")
+Rel(feeder_controller, feeders, "Modbus")
+
+Rel(rtsp_receiver, grpc_client, "Кадры")
+Rel(grpc_client, partner_nn, "gRPC")
+
+Rel(sensor_controller, amqp_publisher, "Публикация")
+Rel(amqp_publisher, sensor_queue, "AMQP")
+Rel(metric_controller, amqp_publisher, "Публикация")
+Rel(manual_controller, amqp_publisher, "Публикация")
+Rel(amqp_publisher_video, alert_queue, "AMQP")
+
+Rel(sensor_queue, amqp_subscriber, "Подписка")
+Rel(alert_queue, amqp_subscriber_alert, "Подписка")
+Rel(command_queue, amqp_subscriber, "Подписка")
+Rel(amqp_subscriber, modbus_client, "Команда")
+Rel(amqp_subscriber_alert, notification_manager, "Тревога")
+Rel(notification_manager, websocket_client, "WebSocket")
+
+Rel(amqp_subscriber_sync, sensor_queue, "Подписка")
+Rel(amqp_subscriber_sync, alert_queue, "Подписка")
+Rel(amqp_subscriber_sync, command_queue, "Подписка")
+Rel(kafka_producer, kafka, "Kafka Protocol")
+Rel(status_updater, feeder_log_table, "UPDATE synced=true")
+Rel(feeder_repository, feeder_log_table, "INSERT")
+
+Rel(login_handler, users_table, "SELECT")
+Rel(token_validator, users_table, "SELECT")
+
+Rel(web_portal, local_auth, "HTTP")
+Rel(websocket_client, notification_manager, "WebSocket")
+Rel(control_form, manual_controller, "HTTP")
+Rel(metric_form, metric_controller, "HTTP")
+Rel(auth_form, login_handler, "HTTP")
+
+Rel(kafka, clickhouse, "Kafka Connect")
+Rel(clickhouse, powerbi, "ODBC")
+
+Rel(operator, web_portal, "Использует")
+Rel(agronom, web_portal, "Использует")
+Rel(analyst, powerbi, "Работает с отчётами")
+
+@enduml

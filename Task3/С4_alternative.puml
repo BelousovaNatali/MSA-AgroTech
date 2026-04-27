@@ -1,0 +1,344 @@
+@startuml
+
+package "Веб-портал" {
+    class LoginForm {
+        - username: str
+        - password: str
+        --
+        +auth()
+        --
+        Форма входа для оператора и агронома.
+    }
+
+    class MetricViewForm {
+        --
+        +show_metrics()
+        +show_alerts()
+        +show_trends()
+        --
+        Форма просмотра метрик, тревог и трендов.
+    }
+
+    class MetricForm {
+        - metric_name: str
+        - metric_value: any
+        - entity_id: str
+        --
+        +add()
+        --
+        Форма добавления пользовательских метрик.
+    }
+
+    class ControlForm {
+        +start(feeder_id, amount_kg)
+        +stop(feeder_id)
+        --
+        Панель ручного управления кормушками.
+    }
+
+    class WebSocketClient {
+        --
+        +on_alert()
+        --
+        Получает push-оповещения от AlertingService.
+    }
+}
+
+package "Сервис видеоаналитики" {
+    class RTSPReceiver {
+        - camera_url: str
+        - stream: cv2.VideoCapture
+        - is_connected: bool
+        --
+        +connect()
+        +read_frame()
+        +disconnect()
+        --
+        Подключается к IP-камере по RTSP, получает видеопоток кадр за кадром.
+    }
+
+    class GRPCClient {
+        - neural_url: str
+        - channel: grpc.Channel
+        --
+        +detect(frame)
+        --
+        Отправляет кадр во внешнюю нейросеть партнёра по gRPC.
+        Получает результат: тип события и количество животных.
+    }
+
+    class AMQPPublisherVideo {
+        --
+        +publish_alert(alert_data)
+        --
+        Публикует тревогу в очередь RabbitMQ.
+    }
+
+    class AlertRepository {
+        - db_connection: DatabaseConnection
+        - table_name: str
+        --
+        +save(alert_data)
+        --
+        Сохраняет тревогу в локальную БД с флагом synced=false.
+    }
+}
+
+package "Сервис управления кормушками" {
+    class FeederController {
+        - feeder_service: FeederService
+        - amqp_subscriber: AMQPSubscriber
+        --
+        +start_dispensing(feeder_id, amount_kg)
+        +stop_dispensing(feeder_id)
+        +get_feeder_status(feeder_id)
+        +on_command_received(command)
+        --
+        Принимает HTTP-запросы и команды из RabbitMQ.
+    }
+
+    class FeederService {
+        - modbus_client: ModbusClient
+        - feeder_repository: FeederRepository
+        --
+        +start(feeder_id, amount_kg)
+        +stop(feeder_id)
+        +get_status(feeder_id)
+        --
+        Содержит бизнес-логику управления кормушками.
+    }
+
+    class ModbusClient {
+        - host: str
+        - port: int
+        - unit_id: int
+        --
+        +open_valve(address)
+        +close_valve(address)
+        --
+        Отправляет Modbus-команды на контроллеры кормушек.
+    }
+
+    class FeederRepository {
+        - db_connection: DatabaseConnection
+        - table_name: str
+        --
+        +log_dispensing_event(feeder_id, amount_kg)
+        --
+        Сохраняет логи досыпок в локальную БД с флагом synced=false.
+    }
+
+    class AMQPSubscriber {
+        - queue_name: str
+        --
+        +subscribe()
+        +on_message()
+        --
+        Подписывается на очередь команд RabbitMQ.
+    }
+}
+
+package "Сервис аутентификации" {
+    class AuthController {
+        +login(username, password)
+        --
+        Принимает HTTP-запросы на аутентификацию.
+    }
+
+    class AuthService {
+        +authenticate(username, password)
+        --
+        Содержит логику аутентификации.
+    }
+
+    class UserRepository {
+        - db_connection: sqlite3.Connection
+        --
+        +find_by_username(username)
+        --
+        Работает с SQLite-таблицей пользователей.
+    }
+}
+
+package "Сервис синхронизации" {
+    class SyncScheduler {
+        - schedule: str
+        --
+        +run_cron(schedule)
+        --
+        Запускает периодическую синхронизацию (раз в 10 минут).
+    }
+
+    class AMQPSubscriberSync {
+        - queues: list
+        --
+        +subscribe()
+        +on_message()
+        --
+        Подписывается на все очереди RabbitMQ.
+    }
+
+    class KafkaProducer {
+        - topic: str
+        - producer: aiokafka.AIOKafkaProducer
+        --
+        +send(messages)
+        --
+        Отправляет данные в Kafka.
+    }
+
+    class StatusUpdater {
+        - db_connection: DatabaseConnection
+        --
+        +mark_synced(table_name, ids)
+        --
+        Обновляет флаг synced=true в TimescaleDB.
+    }
+}
+
+package "Сервис сбора данных" {
+    class SensorController {
+        - sensor_service: SensorService
+        - amqp_publisher: AMQPPublisher
+        --
+        +push(sensor_id, value)
+        --
+        Принимает показания датчиков.
+    }
+
+    class MetricController {
+        - metric_service: MetricService
+        - amqp_publisher: AMQPPublisher
+        --
+        +add(metric_name, metric_value, entity_id)
+        --
+        Принимает пользовательские метрики.
+    }
+
+    class ManualController {
+        - manual_service: ManualService
+        - amqp_publisher: AMQPPublisher
+        --
+        +start_feed(feeder_id, amount_kg)
+        +stop_feed(feeder_id)
+        --
+        Принимает команды ручного управления.
+    }
+
+    class SensorService {
+        - data_repository: DataRepository
+        --
+        +process(sensor_id, value)
+        --
+        Содержит бизнес-логику обработки показаний.
+    }
+
+    class MetricService {
+        - data_repository: DataRepository
+        --
+        +process(metric_name, metric_value, entity_id)
+        --
+        Содержит бизнес-логику обработки метрик.
+    }
+
+    class ManualService {
+        - feeder_service_endpoint: str
+        --
+        +process(feeder_id, amount_kg)
+        --
+        Содержит бизнес-логику ручного управления.
+    }
+
+    class DataRepository {
+        - db_connection: DatabaseConnection
+        - table_sensors: str
+        - table_metrics: str
+        - table_alerts: str
+        --
+        +save_sensor_reading(data)
+        +save_metric(data)
+        +save_alert(data)
+        --
+        Сохраняет данные в TimescaleDB с флагом synced=false.
+    }
+
+    class AMQPPublisher {
+        - exchange: str
+        --
+        +publish(queue, message)
+        --
+        Публикует сообщения в RabbitMQ.
+    }
+}
+
+package "Сервис оповещений" {
+    class AlertingService {
+        - amqp_subscriber_alert: AMQPSubscriberAlert
+        --
+        +on_alert_received(alert)
+        +push(user_id, message)
+        --
+        Подписывается на очередь тревог, отправляет push-уведомления.
+    }
+
+    class AMQPSubscriberAlert {
+        - queue_name: str
+        --
+        +subscribe()
+        +on_message()
+        --
+        Подписывается на очередь тревог RabbitMQ.
+    }
+}
+
+class MessageBroker <<external>>
+class TimescaleDB <<external>>
+class KafkaBroker <<external>>
+class Neural <<external>>
+
+LoginForm --> AuthController
+MetricViewForm --> MetricController
+WebSocketClient --> AlertingService
+ControlForm --> ManualController
+MetricForm --> MetricController
+
+RTSPReceiver --> GRPCClient
+GRPCClient --> Neural
+GRPCClient --> AMQPPublisherVideo
+AMQPPublisherVideo --> MessageBroker
+
+SensorController --> SensorService
+SensorController --> AMQPPublisher
+MetricController --> MetricService
+MetricController --> AMQPPublisher
+ManualController --> ManualService
+ManualController --> AMQPPublisher
+AMQPPublisher --> MessageBroker
+
+FeederController --> AMQPSubscriber
+AMQPSubscriber --> MessageBroker
+FeederController --> FeederService
+FeederService --> ModbusClient
+FeederService --> FeederRepository
+
+AlertingService --> AMQPSubscriberAlert
+AMQPSubscriberAlert --> MessageBroker
+AlertingService --> WebSocketClient
+
+SyncScheduler --> AMQPSubscriberSync
+AMQPSubscriberSync --> MessageBroker
+AMQPSubscriberSync --> KafkaProducer
+AMQPSubscriberSync --> StatusUpdater
+KafkaProducer --> KafkaBroker
+
+AuthController --> AuthService
+AuthService --> UserRepository
+
+SensorService --> DataRepository
+MetricService --> DataRepository
+DataRepository --> TimescaleDB
+AlertRepository --> TimescaleDB
+FeederRepository --> TimescaleDB
+StatusUpdater --> TimescaleDB
+
+@enduml

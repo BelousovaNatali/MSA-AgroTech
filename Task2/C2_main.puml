@@ -1,0 +1,56 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Контейнерная диаграмма C2 — Основное решение
+
+Person(operator, "Дежурный оператор", "На ферме")
+Person(agronom, "Агроном / Ветеринар", "На ферме")
+Person(analyst, "Аналитик", "В головном офисе")
+
+System_Boundary(farm, "Свиноводческая ферма") {
+    Container(web_portal, "Веб-портал", "React + Nginx", "UI для оператора и агронома. Просмотр тревог, ручное управление, добавление пользовательских метрик")
+    Container(data_collector, "Сервис сбора данных", "Python + FastAPI + WebSockets", "Сбор показаний датчиков, управление кормушками, оповещения, приём пользовательских метрик")
+    Container(video_analytics, "Сервис видеоаналитики", "Python + FastAPI", "RTSP → вызов внешней нейросети, передача тревог")
+    Container(feeder_controller, "Сервис управления кормушками", "Python + FastAPI + pymodbus", "Приём команд, отправка Modbus")
+    Container(sync_agent, "Сервис синхронизации", "Python + aiokafka", "Читает из БД непереданные записи (synced=false), отправляет в Kafka")
+    ContainerDb(local_db, "Локальная БД", "TimescaleDB", "Хранилище событий, показаний, тревог, пользовательских метрик. Поле synced")
+    Container(local_auth, "Сервис аутентификации", "Python + PyJWT", "Локальные пользователи, выдача JWT")
+    ContainerDb(local_auth_db, "БД пользователей", "SQLite", "Логины, хеши, роли")
+    Container(cameras, "Видеокамеры", "RTSP", "Видеопоток")
+    Container(feeders, "Контроллеры кормушек", "Modbus", "Исполнительные устройства")
+    Container(sensors, "Датчики", "Modbus / MQTT", "Уровень корма, вода, вес")
+}
+
+System_Ext(partner_nn, "Нейросеть партнёра", "Детекция драк, болезней, подсчёт голов")
+
+System_Boundary(office, "Головной офис") {
+    Container(kafka, "Apache Kafka", "Kafka")
+    Container(clickhouse, "ClickHouse", "ClickHouse", "Хранилище метрик")
+    Container(powerbi, "Power BI", "Power BI", "BI-отчёты")
+    Container(erp, "ERP 1С", "1С", "Бизнес-данные")
+}
+
+Rel(cameras, video_analytics, "RTSP")
+Rel(video_analytics, partner_nn, "gRPC")
+Rel(sensors, data_collector, "Modbus / MQTT")
+Rel(feeder_controller, feeders, "Modbus")
+Rel(video_analytics, data_collector, "HTTP/gRPC (тревоги)")
+Rel(data_collector, feeder_controller, "HTTP (команды досыпки)")
+Rel(data_collector, web_portal, "WebSocket (push оповещений)")
+Rel(web_portal, data_collector, "HTTP (ручное управление, добавление метрик)")
+Rel(data_collector, local_auth, "JWT")
+Rel(video_analytics, local_db, "SQL (вставка тревог, synced=false)")
+Rel(data_collector, local_db, "SQL (вставка показаний, synced=false)")
+Rel(data_collector, local_db, "SQL (вставка пользовательских метрик, synced=false)")
+Rel(feeder_controller, local_db, "SQL (логирование досыпок, synced=false)")
+Rel(local_auth, local_auth_db, "SQL")
+Rel(sync_agent, local_db, "SQL (SELECT WHERE synced=false)")
+Rel(sync_agent, kafka, "Kafka Protocol")
+Rel(kafka, clickhouse, "Kafka Connect")
+Rel(clickhouse, powerbi, "ODBC")
+Rel(clickhouse, erp, "REST")
+Rel(operator, web_portal, "Локальная сеть")
+Rel(agronom, web_portal, "Локальная сеть")
+Rel(analyst, powerbi, "Корпоративная сеть")
+
+@enduml
