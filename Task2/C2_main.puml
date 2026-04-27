@@ -1,7 +1,7 @@
 @startuml
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-title Контейнерная диаграмма C2 — Основное решение (мониторинг скота)
+title Контейнерная диаграмма C2 — Основное решение
 
 Person(operator, "Дежурный оператор", "На ферме")
 Person(agronom, "Агроном / Ветеринар", "На ферме")

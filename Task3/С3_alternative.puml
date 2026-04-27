@@ -1,7 +1,7 @@
 @startuml
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-title Компонентная диаграмма C3 — Альтернативное решение (с брокером RabbitMQ)
+title Компонентная диаграмма C3 — Альтернативное решение
 
 Person(operator, "Дежурный оператор")
 Person(agronom, "Агроном / Ветеринар")
